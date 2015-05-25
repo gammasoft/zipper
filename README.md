@@ -1,12 +1,14 @@
 # zipper
-Simple compression service for Amazon S3
----------
 
-Zipper is a HTTP rest API that will allow you to compress files from your Amazon S3 buckets into a `.zip` file.
+Simple compression service for Amazon S3
+
+### Introduction
+
+Zipper is a HTTP rest API that will allow you to compress files from your Amazon S3 buckets into a `.zip` file. The resulting `.zip` file is the uploaded to Amazon S3.
 
 ### Pre-requirements
 
-1. A queue at Amazon SQS service so its easier to scale up
+1. A queue at Amazon SQS service so its easier to scale up.
 2. An Amazon EC2 instance (the more RAM it has the more files you'll be able to zip) - currently zipper processes all in memory - this will be changed.
 
 ### Installation

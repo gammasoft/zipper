@@ -2,10 +2,8 @@
 
 var express = require('express'),
     bodyParser = require('body-parser'),
-    morgan = require('morgan'),
     Aws = require('aws-sdk'),
     async = require('async'),
-    // ZipStream = require('zip-stream'),
     archiver = require('archiver'),
     Debug = require('debug'),
 
@@ -56,8 +54,7 @@ function processJob(job) {
 
     function checkFiles(heads, cb) {
         debug('Verificando arquivos...');
-        // TODO: Implement size verification logic
-
+        // TODO: Implement file size verification logic
         cb(null, heads);
     }
 
@@ -67,7 +64,7 @@ function processJob(job) {
             heads = [];
         }
 
-        cb(null, archiver.create('zip'));
+        cb(null, archiver('zip'));
     }
 
     function downloadFiles(zip, cb) {
@@ -83,13 +80,34 @@ function processJob(job) {
             }).createReadStream();
 
             zip.append(objectStream, {
-                name: key.join('-')
+                name: key.join('/')
             });
 
-            objectStream.on('end', cb);
+            var bytesReceived = 0;
+            objectStream.on('data', function(chunk) {
+                bytesReceived += chunk.length;
+
+                function formatBytes(bytes) {
+                    if(bytes > 1024 * 1024) {
+                        return (bytes / 1024 / 1024).toFixed(2) + 'Mb';
+                    }
+
+                    if(bytes > 1024) {
+                        return (bytes / 1024).toFixed(2) + 'Kb';
+                    }
+
+                    return bytes + 'b';
+                }
+
+                debug('Received %s', formatBytes(bytesReceived));
+            });
+
+            objectStream.on('end', function() {
+                debug('Download concluído!');
+                cb();
+            });
         }, function(err) {
             if(err) {
-                console.log(JSON.stringify(err, null, 4));
                 return cb(err);
             }
 
@@ -164,7 +182,7 @@ function getNext() {
         ],
         MaxNumberOfMessages: 1,
         VisibilityTimeout: 60,
-        WaitTimeSeconds: 1
+        WaitTimeSeconds: 20
     }, function(err, data) {
         if(err) {
             throw err;
