@@ -1,0 +1,31 @@
+{
+  "name": "zipper",
+  "version": "1.0.0",
+  "description": "Simple compression service for Amazon S3",
+  "main": "index.js",
+  "scripts": {
+    "test": "exit 0;"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/gammasoft/zipper.git"
+  },
+  "keywords": [
+    "zip",
+    "amazon",
+    "s3"
+  ],
+  "author": "Renato Gama <renato@gammasoft.com.br>",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/gammasoft/zipper/issues"
+  },
+  "homepage": "https://github.com/gammasoft/zipper",
+  "dependencies": {
+    "archiver": "^0.14.4",
+    "async": "^1.0.0",
+    "aws-sdk": "^2.1.30",
+    "body-parser": "^1.12.4",
+    "debug": "^2.2.0"
+  }
+}
