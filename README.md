@@ -39,7 +39,7 @@ Send `POST` requests yo your Amazon EC2 instance IP at port `9999` with the foll
     "secretAccessKey": "M8kdoopL/GZ8n7Qgak9OC8/81kfLv7ptG7JnZAFM",
     "region": "sa-east-1"
   },
-  "keys": [
+  "files": [
     "yourCoolBucket/keyToAFile.xml",
     "yourCoolBucket/keyToAnotherFile.xml",
     "yourSecondBucket/theBestFileInTheWorld.pdf",

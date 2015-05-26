@@ -28,10 +28,6 @@ var express = require('express'),
         secretAccessKey: env.secretAccessKey
     });
 
-app.use(bodyParser.json({
-    limit: '256kb'
-}));
-
 function emailNotification(options, callback) {
     return callback();
 }
@@ -85,7 +81,7 @@ function processJob(job) {
         secretAccessKey: job.credentials.secretAccessKey
     });
 
-    job.files = job.keys.map(function(key) {
+    job.files = job.files.map(function(key) {
         var key = key.split('/'),
             file = {
                 fullKey: key.join('/'),
@@ -93,13 +89,9 @@ function processJob(job) {
                 key: key.join('/')
             };
 
-        // file.extension = path.extname(file.key);
-        // file.name = path.basename(file.key, file.extension);
         file.name = path.basename(file.key);
         return file;
     });
-
-    delete job.keys;
 
     job.destination = job.destination.split('/');
     job.destination = {
@@ -108,11 +100,7 @@ function processJob(job) {
         key: job.destination.join('/')
     }
 
-    // job.destination.extension = path.extname(job.destination.key);
-    // job.destination.name = path.basename(job.destination.key, job.destination.key);
     job.destination.name = path.basename(job.destination.key);
-
-    // debug(job);
 
     function getHeaders(cb) {
         debug('Downloading files headers...');
@@ -192,7 +180,7 @@ function processJob(job) {
         });
     }
 
-    function createZipFile(cb) {
+    function createCompressedFile(cb) {
         debug('Creating compressed file...');
 
         var zip = childProcess.spawn('zip', [
@@ -223,7 +211,23 @@ function processJob(job) {
         });
     }
 
-    function uploadZipFile(cb) {
+    function getCompressedFileSize(cb) {
+        debug('Getting compressed file size...');
+        fs.stat(compressedFilePath, function(err, stats) {
+            if(err) {
+                debug('error getting compressed file size!');
+                return cb(err);
+            }
+
+            compressedFileSize = stats.size;
+            debug('Compressed file size is %s', prettyBytes(compressedFileSize));
+
+            cb()
+        });
+    }
+
+
+    function uploadCompressedFile(cb) {
         debug('Uploading file: %s', job.destination.fullKey);
 
         var upload = s3client.upload({
@@ -243,21 +247,6 @@ function processJob(job) {
             uploadedFileLocation = data.Location;
             debug('File available at: %s', uploadedFileLocation);
             cb();
-        });
-    }
-
-    function getCompressedFileSize(cb) {
-        debug('Getting compressed file size...');
-        fs.stat(compressedFilePath, function(err, stats) {
-            if(err) {
-                debug('error getting compressed file size!');
-                return cb(err);
-            }
-
-            compressedFileSize = stats.size;
-            debug('Compressed file size is %s', prettyBytes(compressedFileSize));
-
-            cb()
         });
     }
 
@@ -301,7 +290,7 @@ function processJob(job) {
         rimraf(temporaryDirectoryPath, function(err) {
             if(err) {
                 debug('Error removing temporary directory and files');
-                return cb(err);
+                throw err;
             }
 
             debug('Cleanup complete');
@@ -315,31 +304,38 @@ function processJob(job) {
         checkFiles,
         createTemporaryDirectory,
         downloadFiles,
-        createZipFile,
-        uploadZipFile,
+        createCompressedFile,
+        getCompressedFileSize,
+        uploadCompressedFile,
         sendNotifications,
-        deleteJob,
-        cleanUp
+        deleteJob
     ], function(err) {
-        if(err) {
-            throw err;
-        }
+        cleanUp(function() {
+            if(err) {
+                debug('Error processing job');
+                debug(err);
+                throw err;
+            }
 
-        debug('Job completed in: %s seconds', (new Date() - startTime) / 1000);
-        setImmediate(getNext);
+            debug('Job completed in: %s seconds', (new Date() - startTime) / 1000);
+            setImmediate(getNextJob);
+        });
     });
 }
 
-function getNext() {
-    var longPoolingPeriod = 20;
+function getNextJob() {
+    var longPoolingPeriod = 20,
+        visibilityTimeout = 60 * 2.5,
+        maxNumberOfMessages = 1;
+
     debug('Long pooling for jobs. Timeout: %s seconds', longPoolingPeriod);
 
     sqs.receiveMessage({
         AttributeNames: [
             'ApproximateReceiveCount'
         ],
-        MaxNumberOfMessages: 1,
-        VisibilityTimeout: 60,
+        MaxNumberOfMessages: maxNumberOfMessages,
+        VisibilityTimeout: visibilityTimeout,
         WaitTimeSeconds: longPoolingPeriod
     }, function(err, data) {
         if(err) {
@@ -348,7 +344,7 @@ function getNext() {
 
         if(!data.Messages || !data.Messages.length) {
             debug('No jobs found...');
-            return setImmediate(getNext);
+            return setImmediate(getNextJob);
         }
 
         var message = data.Messages[0],
@@ -362,7 +358,9 @@ function getNext() {
     });
 }
 
-getNext();
+app.use(bodyParser.json({
+    limit: '256kb'
+}));
 
 app.post('/', function(req, res, next) {
     var job = req.body;
@@ -371,8 +369,8 @@ app.post('/', function(req, res, next) {
         return next(new Error('Credentials missing!'));
     }
 
-    if(!job.keys || !job.keys.length) {
-        return next(new Error('Keys missing!'));
+    if(!job.files || !job.files.length) {
+        return next(new Error('Files array is missing!'));
     }
 
     if(!job.destination) {
@@ -396,3 +394,4 @@ app.post('/', function(req, res, next) {
 });
 
 app.listen(9999);
+getNextJob();
