@@ -4,12 +4,19 @@ var express = require('express'),
     bodyParser = require('body-parser'),
     Aws = require('aws-sdk'),
     async = require('async'),
-    archiver = require('archiver'),
+    prettyBytes = require('pretty-bytes'),
+    tmp = require('tmp'),
+    rimraf = require('rimraf'),
+    request = require('request'),
     Debug = require('debug'),
+
+    fs = require('fs'),
+    path = require('path'),
+    childProcess = require('child_process'),
 
     app = express(),
     debug = new Debug('zipper'),
-    busy = false,
+    debugHttp = new Debug('zipper:http'),
     env = require('./env.json'),
     sqs = new Aws.SQS({
         params: {
@@ -25,9 +32,50 @@ app.use(bodyParser.json({
     limit: '256kb'
 }));
 
+function emailNotification(options, callback) {
+    return callback();
+}
+
+function httpNotification(options, callback) {
+    var notification = options.notification,
+        results = options.results,
+        job = options.job;
+
+    debug('Sending HTTP notification to %s %s:', notification.method, notification.url);
+
+    request({
+        method: notification.method,
+        url: notification.url,
+        json: {
+            id: job.id,
+            status: results.status,
+            location: results.location,
+            size: compressedFileSize
+        }
+    }, function(err, res, body) {
+        if(err) {
+            debug('Error sending HTTP notification');
+            return callback(err);
+        }
+
+        debug('Notification sent, status code: %s', res.statusCode);
+        callback(null, res.statusCode);
+    });
+}
+
+var notificationTypes = {
+    'http': httpNotification,
+    'email': emailNotification
+};
+
 function processJob(job) {
-    busy = true;
-    debug('Processando: %s', job.id);
+    debug('Processing job: %s - Attempt #%s', job.id, job.tries);
+
+    var fileHeaders,
+        temporaryDirectoryPath,
+        compressedFilePath,
+        compressedFileSize,
+        uploadedFileLocation;
 
     var s3client = new Aws.S3({
         endpoint: 'https://s3-' + job.credentials.region + '.amazonaws.com',
@@ -37,159 +85,269 @@ function processJob(job) {
         secretAccessKey: job.credentials.secretAccessKey
     });
 
-    function getHeads(cb) {
-        debug('Obtendo dados dos arquivos...');
-        debug('Quantidade de arquivos: %s', job.keys.length);
+    job.files = job.keys.map(function(key) {
+        var key = key.split('/'),
+            file = {
+                fullKey: key.join('/'),
+                bucket: key.shift(),
+                key: key.join('/')
+            };
 
-        async.mapSeries(job.keys, function(key, cb) {
-            debug('Obtendo dados do arquivo: %s', key);
+        // file.extension = path.extname(file.key);
+        // file.name = path.basename(file.key, file.extension);
+        file.name = path.basename(file.key);
+        return file;
+    });
 
-            key = key.split('/');
+    delete job.keys;
+
+    job.destination = job.destination.split('/');
+    job.destination = {
+        fullKey: job.destination.join('/'),
+        bucket: job.destination.shift(),
+        key: job.destination.join('/')
+    }
+
+    // job.destination.extension = path.extname(job.destination.key);
+    // job.destination.name = path.basename(job.destination.key, job.destination.key);
+    job.destination.name = path.basename(job.destination.key);
+
+    // debug(job);
+
+    function getHeaders(cb) {
+        debug('Downloading files headers...');
+
+        async.mapSeries(job.files, function(file, cb) {
+            debug('Downloading file headers from: %s', file.fullKey);
+
             s3client.headObject({
-                Bucket: key.shift(),
-                Key: key.join('/')
+                Bucket: file.bucket,
+                Key: file.key
             }, cb);
-        }, cb);
+        }, function(err, headers) {
+            if(err) {
+                debug('Error downloading headers!');
+                return cb(err);
+            }
+
+            fileHeaders = headers;
+            cb();
+        });
     }
 
-    function checkFiles(heads, cb) {
-        debug('Verificando arquivos...');
-        // TODO: Implement file size verification logic
-        cb(null, heads);
+    function checkFiles(cb) {
+        debug('Checking files...');
+        cb(null);
     }
 
-    function createZipFile(heads, cb) {
-        if(typeof heads === 'function') {
-            cb = heads;
-            heads = [];
-        }
+    function createTemporaryDirectory(cb) {
+        debug('Creating temporary directory');
 
-        cb(null, archiver('zip'));
+        tmp.dir({
+            prefix: 'zipper_'
+        }, function temporaryDirectoryCreated(err, path, cleanup) {
+            if(err) {
+                debug('Error creating temporary directory!');
+                return cb(err);
+            }
+
+            debug('Temporary directory created at %s', path);
+            temporaryDirectoryPath = path;
+            cb();
+        });
     }
 
-    function downloadFiles(zip, cb) {
-        zip.on('error', cb);
+    function downloadFiles(cb) {
+        debug('Downloading %s files...', job.files.length);
 
-        async.eachSeries(job.keys, function(key, cb) {
-            debug('Baixando o arquivo: %s', key);
+        async.eachSeries(job.files, function(file, cb) {
+            debug('Downloading file: %s', file.fullKey);
 
-            key = key.split('/');
-            var objectStream = s3client.getObject({
-                Bucket: key.shift(),
-                Key: key.join('/')
+            var fileDownload = s3client.getObject({
+                Bucket: file.bucket,
+                Key: file.key
             }).createReadStream();
 
-            zip.append(objectStream, {
-                name: key.join('/')
-            });
+            var writeStream = fs.createWriteStream(path.join(temporaryDirectoryPath, file.name));
+            fileDownload.pipe(writeStream);
 
             var bytesReceived = 0;
-            objectStream.on('data', function(chunk) {
+            fileDownload.on('data', function(chunk) {
                 bytesReceived += chunk.length;
-
-                function formatBytes(bytes) {
-                    if(bytes > 1024 * 1024) {
-                        return (bytes / 1024 / 1024).toFixed(2) + 'Mb';
-                    }
-
-                    if(bytes > 1024) {
-                        return (bytes / 1024).toFixed(2) + 'Kb';
-                    }
-
-                    return bytes + 'b';
-                }
-
-                debug('Received %s', formatBytes(bytesReceived));
+                debug('Received %s', prettyBytes(bytesReceived));
             });
 
-            objectStream.on('end', function() {
-                debug('Download concluído!');
+            fileDownload.on('end', function() {
+                debug('Download completed!');
                 cb();
             });
         }, function(err) {
             if(err) {
+                debug('Error downloading files!');
                 return cb(err);
             }
 
-            zip.finalize();
-            cb(null, zip);
+            debug('All downloads completed!');
+            cb();
         });
     }
 
-    function uploadZipFile(zip, cb) {
-        debug('Enviando arquivo: %s', job.destinationKey);
+    function createZipFile(cb) {
+        debug('Creating compressed file...');
 
-        var key = job.destinationKey.split('/'),
-            upload = s3client.upload({
-                Bucket: key.shift(),
-                Key: key.join('/'),
+        var zip = childProcess.spawn('zip', [
+            '-r',
+            job.destination.name,
+            './'
+        ], {
+            cwd: temporaryDirectoryPath
+        });
+
+        zip.stdout.on('data', function(data) {
+            debug('zip stdout', data.toString().trim());
+        });
+
+        zip.stderr.on('data', function() {
+            debug('zip stderr', data.toString().trim());
+        });
+
+        zip.on('close', function(exitCode) {
+            if(exitCode !== 0) {
+                debug('Error creating compressed file! Zip exited with code %s', exitCode);
+                cb(new Error('Zip exited with code: ' + exitCode));
+            }
+
+            compressedFilePath = path.join(temporaryDirectoryPath, job.destination.name);
+            debug('Compressed file created!');
+            cb();
+        });
+    }
+
+    function uploadZipFile(cb) {
+        debug('Uploading file: %s', job.destination.fullKey);
+
+        var upload = s3client.upload({
+                Bucket: job.destination.bucket,
+                Key: job.destination.key,
                 ACL: job.acl || 'private',
-                Body: zip
+                Body: fs.createReadStream(compressedFilePath)
             });
 
         upload.on('httpUploadProgress', debug);
-        upload.send(cb);
+        upload.send(function(err, data) {
+            if(err) {
+                debug('Error uploading file!');
+                return cb(err);
+            }
+
+            uploadedFileLocation = data.Location;
+            debug('File available at: %s', uploadedFileLocation);
+            cb();
+        });
     }
 
-    function sendNotifications(data, cb) {
-        debug('Arquivo disponível em: %s', data.Location);
+    function getCompressedFileSize(cb) {
+        debug('Getting compressed file size...');
+        fs.stat(compressedFilePath, function(err, stats) {
+            if(err) {
+                debug('error getting compressed file size!');
+                return cb(err);
+            }
 
-        if(job.notifications && job.notifications.length) {
-            // TODO: Not Implemented
-            // Enviar job.id e data.Location
-        } else {
-            debug('Nenhuma notificação para enviar');
+            compressedFileSize = stats.size;
+            debug('Compressed file size is %s', prettyBytes(compressedFileSize));
+
+            cb()
+        });
+    }
+
+    function sendNotifications(cb) {
+        if(!job.notifications || !job.notifications.length) {
+            debug('No notifications to send...');
+            return cb();
         }
 
-        cb();
+        debug('Sending %s notifications...', job.notifications.length);
+        async.eachSeries(job.notifications, function(notification, cb) {
+            var notificationType = notification.type.toLowerCase(),
+                notificationStrategy = notificationTypes[notificationType];
+
+            if(!notificationStrategy) {
+                debug('Unkown notification type "%s" - skiping...', notificationType);
+                return cb();
+            }
+
+            notificationStrategy({
+                job: job,
+                notification: notification,
+                results: {
+                    location: data.Location,
+                    status: 'success'
+                }
+            }, cb);
+        }, cb);
     }
 
     function deleteJob(cb) {
-        debug('Deletando job...');
+        debug('Deleting job...');
 
         sqs.deleteMessage({
             ReceiptHandle: job.deleteId
         }, cb);
     }
 
+    function cleanUp(cb) {
+        debug('Perfoming clean up...');
+        rimraf(temporaryDirectoryPath, function(err) {
+            if(err) {
+                debug('Error removing temporary directory and files');
+                return cb(err);
+            }
+
+            debug('Cleanup complete');
+            cb();
+        });
+    }
+
     var startTime = new Date();
-    async.waterfall([
-        // getHeads,
-        // checkFiles,
-        createZipFile,
+    async.series([
+        getHeaders,
+        checkFiles,
+        createTemporaryDirectory,
         downloadFiles,
+        createZipFile,
         uploadZipFile,
         sendNotifications,
-        deleteJob
+        deleteJob,
+        cleanUp
     ], function(err) {
         if(err) {
             throw err;
         }
 
-        busy = false;
-        debug('Job concluido em: %s segundos', (new Date() - startTime) / 1000);
+        debug('Job completed in: %s seconds', (new Date() - startTime) / 1000);
         setImmediate(getNext);
     });
 }
 
 function getNext() {
-    debug('Obtendo jobs...');
+    var longPoolingPeriod = 20;
+    debug('Long pooling for jobs. Timeout: %s seconds', longPoolingPeriod);
 
     sqs.receiveMessage({
         AttributeNames: [
-            'ApproximateFirstReceiveTimestamp',
             'ApproximateReceiveCount'
         ],
         MaxNumberOfMessages: 1,
         VisibilityTimeout: 60,
-        WaitTimeSeconds: 20
+        WaitTimeSeconds: longPoolingPeriod
     }, function(err, data) {
         if(err) {
             throw err;
         }
 
         if(!data.Messages || !data.Messages.length) {
-            debug('Nenhum job...');
+            debug('No jobs found...');
             return setImmediate(getNext);
         }
 
@@ -198,6 +356,8 @@ function getNext() {
 
         job.id = message.MessageId;
         job.deleteId = message.ReceiptHandle;
+        job.tries = message.Attributes.ApproximateReceiveCount;
+
         processJob(job);
     });
 }
@@ -215,17 +375,20 @@ app.post('/', function(req, res, next) {
         return next(new Error('Keys missing!'));
     }
 
-    if(!job.destinationKey) {
+    if(!job.destination) {
         return next(new Error('Destination key missing!'));
     }
 
+    debugHttp('Job receveid, sending to queue...');
     sqs.sendMessage({
         MessageBody: JSON.stringify(job)
     }, function(err, data) {
         if(err) {
+            debugHttp('Error sending job to queue!');
             return next(err);
         }
 
+        debugHttp('Job sent to queue: %s', data.MessageId);
         res.status(202).json({
             id: data.MessageId
         });

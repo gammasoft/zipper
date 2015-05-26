@@ -22,10 +22,13 @@
   },
   "homepage": "https://github.com/gammasoft/zipper",
   "dependencies": {
-    "archiver": "^0.14.4",
     "async": "^1.0.0",
     "aws-sdk": "^2.1.30",
     "body-parser": "^1.12.4",
-    "debug": "^2.2.0"
+    "debug": "^2.2.0",
+    "pretty-bytes": "^2.0.1",
+    "request": "^2.55.0",
+    "rimraf": "^2.3.4",
+    "tmp": "0.0.26"
   }
 }

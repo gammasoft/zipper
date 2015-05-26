@@ -6,14 +6,16 @@ Simple compression service for Amazon S3
 
 Zipper is a HTTP rest API that will allow you to compress files from your Amazon S3 buckets into a `.zip` file. The resulting `.zip` file is then uploaded to Amazon S3.
 
+You can also configure notification hooks to know when your file is ready.
+
 ### Pre-requirements
 
 1. A queue at Amazon SQS service so its easier to scale up.
-2. An Amazon EC2 instance (the more RAM it has the more files you'll be able to zip) - currently zipper processes all in memory - this will be changed.
+2. An Amazon EC2 instance - can be a micro one.
 
 ### Installation
 
-1. Clone this repo on your Amazon EC2 instance `git clone https://github.com/gammasoft/zipper.git`
+1. Clone this repo on your Amazon EC2 instance with `git clone https://github.com/gammasoft/zipper.git`
 2. Install dependencies: `cd zipper && npm install`
 3. Create a configuration file like this (replace with your specific values) and put it beside `index.js`:
 ```json
@@ -42,19 +44,22 @@ Send `POST` requests yo your Amazon EC2 instance IP at port `9999` with the foll
     "yourCoolBucket/keyToAnotherFile.xml",
     "yourSecondBucket/theBestFileInTheWorld.pdf",
   ],
-  "destinationKey": "myThirdBucket/everything.zip"
+  "destination": "myThirdBucket/everything.zip"
 }
 ```
 
 **Note that** all buckets must be in the same region of your credentials!
 
-**ITS ADVISABLE THAT YOU CREATE SPECIFIC ACCESS CREDENTIALS TO USE WITH ZIPPER. GIVE THEM RESTRICTED ACCESS!**
+**ITS ADVISABLE THAT YOU CREATE SPECIFIC ACCESS CREDENTIALS TO USE WITH ZIPPER, AND GIVE THEM RESTRICTED ACCESS!**
+
+### Debugging
+
+If you have any problems and need some debbuging then you should start zipper like this: `DEBUG=zipper,zipper:http node index.js`. This will print log messages that might be helpful.
 
 ### Roadmap
 
-1. Manipulate the resulting `.zip` file in disk, which is cheaper than ram.
-2. Implement notifications/hooks (smtp/http)
-3. Implement size filters (e.g. *do not allow resulting files bigger than X, or individual files bigger than Y*)
+1. Implement notifications/hooks (smtp/http)
+2. Implement size filters (e.g. *do not allow resulting files bigger than X, or individual files bigger than Y*)
 
 ### Contributions
 
