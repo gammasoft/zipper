@@ -30,7 +30,7 @@ You can also configure notification hooks to know when your file is ready.
 
 ### Usage
 
-Send `POST` requests yo your Amazon EC2 instance IP at port `9999` with the follwoing payload:
+Send `POST` requests yo your Amazon EC2 instance IP at port `9999` with the following payload:
 
 ```json
 {
