@@ -15,7 +15,7 @@ Zipper is a HTTP rest API that will allow you to compress files from your Amazon
 
 1. Clone this repo on your Amazon EC2 instance `git clone https://github.com/gammasoft/zipper.git`
 2. Install dependencies: `cd zipper && npm install`
-3. Create a configuration file like this (replace with your specific values) and put it besides `index.js`:
+3. Create a configuration file like this (replace with your specific values) and put it beside `index.js`:
 ```json
 {
     "queueUrl": "https://sqs.sa-east-1.amazonaws.com/123412341234/yourQueueForZipper",
