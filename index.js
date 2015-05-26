@@ -37,7 +37,7 @@ function httpNotification(options, callback) {
         results = options.results,
         job = options.job;
 
-    debug('Sending HTTP notification to %s %s:', notification.method, notification.url);
+    debug('Sending HTTP notification to "%s %s"', notification.method, notification.url);
 
     request({
         method: notification.method,
@@ -46,7 +46,7 @@ function httpNotification(options, callback) {
             id: job.id,
             status: results.status,
             location: results.location,
-            size: compressedFileSize
+            size: results.size
         }
     }, function(err, res, body) {
         if(err) {
@@ -55,6 +55,11 @@ function httpNotification(options, callback) {
         }
 
         debug('Notification sent, status code: %s', res.statusCode);
+        if(res.statusCode === 200) {
+            debug('Response was successful, response body:');
+            debug(body);
+        }
+
         callback(null, res.statusCode);
     });
 }
@@ -64,7 +69,7 @@ var notificationTypes = {
     'email': emailNotification
 };
 
-function processJob(job) {
+function processJob(job, callback) {
     debug('Processing job: %s - Attempt #%s', job.id, job.tries);
 
     var fileHeaders,
@@ -213,6 +218,7 @@ function processJob(job) {
 
     function getCompressedFileSize(cb) {
         debug('Getting compressed file size...');
+
         fs.stat(compressedFilePath, function(err, stats) {
             if(err) {
                 debug('error getting compressed file size!');
@@ -222,10 +228,9 @@ function processJob(job) {
             compressedFileSize = stats.size;
             debug('Compressed file size is %s', prettyBytes(compressedFileSize));
 
-            cb()
+            cb();
         });
     }
-
 
     function uploadCompressedFile(cb) {
         debug('Uploading file: %s', job.destination.fullKey);
@@ -246,6 +251,7 @@ function processJob(job) {
 
             uploadedFileLocation = data.Location;
             debug('File available at: %s', uploadedFileLocation);
+
             cb();
         });
     }
@@ -270,7 +276,8 @@ function processJob(job) {
                 job: job,
                 notification: notification,
                 results: {
-                    location: data.Location,
+                    location: uploadedFileLocation,
+                    size: compressedFileSize,
                     status: 'success'
                 }
             }, cb);
@@ -281,7 +288,7 @@ function processJob(job) {
         debug('Deleting job...');
 
         sqs.deleteMessage({
-            ReceiptHandle: job.deleteId
+            ReceiptHandle: job.receipt
         }, cb);
     }
 
@@ -314,19 +321,21 @@ function processJob(job) {
             if(err) {
                 debug('Error processing job');
                 debug(err);
-                throw err;
+                // TODO: Send notification on 5th attempt, indicating that job failed
+                return callback(err);
             }
 
             debug('Job completed in: %s seconds', (new Date() - startTime) / 1000);
-            setImmediate(getNextJob);
+            callback();
         });
     });
 }
 
-function getNextJob() {
+function getNextJobs() {
     var longPoolingPeriod = 20,
         visibilityTimeout = 60 * 2.5,
-        maxNumberOfMessages = 1;
+        maxNumberOfMessages = 1,
+        concurrentJobs = 1;
 
     debug('Long pooling for jobs. Timeout: %s seconds', longPoolingPeriod);
 
@@ -339,28 +348,44 @@ function getNextJob() {
         WaitTimeSeconds: longPoolingPeriod
     }, function(err, data) {
         if(err) {
+            debug('Error receiving messages!');
             throw err;
         }
 
         if(!data.Messages || !data.Messages.length) {
             debug('No jobs found...');
-            return setImmediate(getNextJob);
+            return setImmediate(getNextJobs);
         }
 
-        var message = data.Messages[0],
-            job = JSON.parse(message.Body);
+        var messages = data.Messages.map(function(message) {
+            var job = JSON.parse(message.Body);
 
-        job.id = message.MessageId;
-        job.deleteId = message.ReceiptHandle;
-        job.tries = message.Attributes.ApproximateReceiveCount;
+            job.id = message.MessageId;
+            job.receipt = message.ReceiptHandle;
+            job.tries = message.Attributes.ApproximateReceiveCount;
 
-        processJob(job);
+            return job;
+        });
+
+        debug('Received %s jobs', messages.length);
+        async.eachLimit(messages, concurrentJobs, processJob, function(err) {
+            setImmediate(getNextJobs);
+        });
     });
 }
 
 app.use(bodyParser.json({
     limit: '256kb'
 }));
+
+app.all('/echo', function(req, res, next) {
+    debugHttp('Echoing request...');
+
+    res.json({
+        query: req.query,
+        body: req.body
+    });
+});
 
 app.post('/', function(req, res, next) {
     var job = req.body;
@@ -377,7 +402,7 @@ app.post('/', function(req, res, next) {
         return next(new Error('Destination key missing!'));
     }
 
-    debugHttp('Job receveid, sending to queue...');
+    debugHttp('Job received, sending to queue...');
     sqs.sendMessage({
         MessageBody: JSON.stringify(job)
     }, function(err, data) {
@@ -394,4 +419,4 @@ app.post('/', function(req, res, next) {
 });
 
 app.listen(9999);
-getNextJob();
+getNextJobs();
