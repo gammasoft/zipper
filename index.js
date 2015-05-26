@@ -294,6 +294,12 @@ function processJob(job, callback) {
 
     function cleanUp(cb) {
         debug('Perfoming clean up...');
+
+        if(!temporaryDirectoryPath) {
+            debug('Nothing to cleanup!');
+            return cb();
+        }
+
         rimraf(temporaryDirectoryPath, function(err) {
             if(err) {
                 debug('Error removing temporary directory and files');

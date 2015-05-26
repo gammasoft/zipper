@@ -1,6 +1,6 @@
 {
   "name": "zipper",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Simple compression service for Amazon S3",
   "main": "index.js",
   "scripts": {
