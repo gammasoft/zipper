@@ -17,7 +17,7 @@ You can also configure notification hooks to know when your file is ready.
 
 1. Clone this repo on your Amazon EC2 instance with `git clone https://github.com/gammasoft/zipper.git`
 2. Install dependencies: `cd zipper && npm install`
-3. Create a configuration file like this (replace with your specific values) and put it beside `index.js`:
+3. Create a configuration file like this (replace with your specific values), call it `env.json` and put it beside `index.js`:
 ```json
 {
     "queueUrl": "https://sqs.sa-east-1.amazonaws.com/123412341234/yourQueueForZipper",
