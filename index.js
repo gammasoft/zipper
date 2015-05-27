@@ -41,7 +41,7 @@ function httpNotification(options, callback) {
 
     request({
         method: notification.method,
-        url: notification.url,
+        url: notification.url.replace(/{:id}/g, job.id),
         json: {
             id: job.id,
             status: results.status,

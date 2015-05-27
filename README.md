@@ -44,7 +44,20 @@ Send `POST` requests yo your Amazon EC2 instance IP at port `9999` with the foll
     "yourCoolBucket/keyToAnotherFile.xml",
     "yourSecondBucket/theBestFileInTheWorld.pdf",
   ],
+  "notifications": [{
+    "type": "http",
+    "method": "post",
+    "url": "http://example.com/update-zip-status?id={:id}"
+  }],
   "destination": "myThirdBucket/everything.zip"
+}
+```
+
+You will be provided a response `202 - Accepted` containing a job id that will uniquely identify your compression job. It is useful to save this value when using http hooks/notifications to later identify which job has finished. This is what the response data looks like:
+
+```json
+{
+    "id": "48926954-2bc2-479a-9a73-9f84a69dabd1"
 }
 ```
 
@@ -52,13 +65,34 @@ Send `POST` requests yo your Amazon EC2 instance IP at port `9999` with the foll
 
 **ITS ADVISABLE THAT YOU CREATE SPECIFIC ACCESS CREDENTIALS TO USE WITH ZIPPER, AND GIVE THEM RESTRICTED ACCESS!**
 
+### Notifications
+
+Only HTTP notifications are implemented so far. You can pass any url/method, and if your url contains the id placeholder `{:id}` then zipper will replace it with your job id therefore helping you identify which file is ready.
+
+This is the payload sent with any HTTP notification:
+
+```json
+{
+    "id": "48926954-2bc2-479a-9a73-9f84a69dabd1",
+    "status": "success",
+    "location": "http://s3-sa-east-1.amazons3.com/your-file.zip",
+    "size": "43243"
+}
+```
+
+**Where:**
+- `id` is the same id returned when you first submited the job.
+- `status` is either `success` or `failed` (zipper tries to execute your job 5 times before giving up).
+- `location` is the Amazon S3 url for your compressed file
+- `size` is the size in bytes of your resulting file
+
 ### Debugging
 
 If you have any problems and need some debbuging then you should start zipper like this: `DEBUG=zipper,zipper:http node index.js`. This will print log messages that might be helpful.
 
 ### Roadmap
 
-1. Implement notifications/hooks (smtp/http)
+1. Implement email notifications
 2. Implement size filters (e.g. *do not allow resulting files bigger than X, or individual files bigger than Y*)
 
 ### Contributions
