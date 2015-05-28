@@ -7,17 +7,18 @@ var express = require('express'),
     prettyBytes = require('pretty-bytes'),
     tmp = require('tmp'),
     rimraf = require('rimraf'),
-    request = require('request'),
     Debug = require('debug'),
 
     fs = require('fs'),
     path = require('path'),
     childProcess = require('child_process'),
 
+    notificationTypes = require('./notifications'),
+    env = require('./env.json'),
+
     app = express(),
     debug = new Debug('zipper'),
     debugHttp = new Debug('zipper:http'),
-    env = require('./env.json'),
     sqs = new Aws.SQS({
         params: {
             QueueUrl: env.queueUrl
@@ -27,47 +28,6 @@ var express = require('express'),
         accessKeyId: env.accessKeyId,
         secretAccessKey: env.secretAccessKey
     });
-
-function emailNotification(options, callback) {
-    return callback();
-}
-
-function httpNotification(options, callback) {
-    var notification = options.notification,
-        results = options.results,
-        job = options.job;
-
-    debug('Sending HTTP notification to "%s %s"', notification.method, notification.url);
-
-    request({
-        method: notification.method,
-        url: notification.url.replace(/{:id}/g, job.id),
-        json: {
-            id: job.id,
-            status: results.status,
-            location: results.location,
-            size: results.size
-        }
-    }, function(err, res, body) {
-        if(err) {
-            debug('Error sending HTTP notification');
-            return callback(err);
-        }
-
-        debug('Notification sent, status code: %s', res.statusCode);
-        if(res.statusCode === 200) {
-            debug('Response was successful, response body:');
-            debug(body);
-        }
-
-        callback(null, res.statusCode);
-    });
-}
-
-var notificationTypes = {
-    'http': httpNotification,
-    'email': emailNotification
-};
 
 function processJob(job, callback) {
     debug('Processing job: %s - Attempt #%s', job.id, job.tries);
