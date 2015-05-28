@@ -18,6 +18,7 @@ var express = require('express'),
 
     app = express(),
     debug = new Debug('zipper'),
+    debugVerbose = new Debug('zipper:verbose'),
     debugHttp = new Debug('zipper:http'),
     sqs = new Aws.SQS({
         params: {
@@ -51,8 +52,7 @@ function registerTimeTaken(files, size, duration) { // TODO: Implement multi lin
 function processJob(job, callback) {
     debug('Processing job: %s - Attempt #%s', job.id, job.tries);
 
-    var filesHeaders,
-        filesSize = 0,
+    var filesSize = 0,
         temporaryDirectoryPath,
         compressedFilePath,
         compressedFileSize,
@@ -87,46 +87,40 @@ function processJob(job, callback) {
 
     job.destination.name = path.basename(job.destination.key);
 
+    function validateFile(header, cb) {
+        var size = parseInt(header.ContentLength, 10);
+        debugVerbose('File size is %s', prettyBytes(size));
+        // TODO: Add max file size validation
+
+        filesSize += size;
+        cb();
+    }
+
     function getHeaders(cb) {
         debug('Downloading files headers...');
 
-        async.mapSeries(job.files, function(file, cb) {
-            debug('Downloading file headers from: %s', file.fullKey);
+        async.eachSeries(job.files, function(file, cb) {
+            debugVerbose('Downloading headers from %s', file.fullKey);
 
             s3client.headObject({
                 Bucket: file.bucket,
                 Key: file.key
-            }, cb);
-        }, function(err, headers) {
-            if(err) {
-                debug('Error downloading headers!');
-                return cb(err);
-            }
+            }, function(err, header) {
+                if(err) {
+                    debug('Error obtaining file head');
+                    return next(err);
+                }
 
-            filesHeaders = headers;
-            cb();
-        });
-    }
-
-    function checkFiles(cb) {
-        debug('Checking files...');
-
-        async.eachSeries(filesHeaders, function(file, cb) {
-            var size = parseInt(file.ContentLength, 10);
-            debug('File size is: %s', prettyBytes(size));
-            // TODO: Add max file size validation
-
-            filesSize += size;
-            cb();
+                validateFile(header, cb);
+            });
         }, function(err) {
             if(err) {
-                debug('Error while checking files');
+                debug('Error downloading headers');
                 return cb(err);
             }
 
-            debug('All files checked, total size to compress is %s', prettyBytes(filesSize));
-            // TODO: Add total size validation
-
+            // TODO: Add max total size validation
+            debug('Total size to compress is %s', prettyBytes(filesSize));
             cb();
         });
     }
@@ -150,7 +144,7 @@ function processJob(job, callback) {
             prefix: 'zipper_'
         }, function temporaryDirectoryCreated(err, path, cleanup) {
             if(err) {
-                debug('Error creating temporary directory!');
+                debug('Error creating temporary directory');
                 return cb(err);
             }
 
@@ -164,7 +158,7 @@ function processJob(job, callback) {
         debug('Downloading %s files...', job.files.length);
 
         async.eachSeries(job.files, function(file, cb) {
-            debug('Downloading file: %s', file.fullKey);
+            debugVerbose('Downloading file %s', file.fullKey);
 
             var fileDownload = s3client.getObject({
                 Bucket: file.bucket,
@@ -177,20 +171,20 @@ function processJob(job, callback) {
             var bytesReceived = 0;
             fileDownload.on('data', function(chunk) {
                 bytesReceived += chunk.length;
-                debug('Received %s', prettyBytes(bytesReceived));
+                debugVerbose('Received %s', prettyBytes(bytesReceived));
             });
 
             fileDownload.on('end', function() {
-                debug('Download completed!');
+                debugVerbose('Download completed');
                 cb();
             });
         }, function(err) {
             if(err) {
-                debug('Error downloading files!');
+                debug('Error downloading files');
                 return cb(err);
             }
 
-            debug('All downloads completed!');
+            debug('All downloads completed');
             cb();
         });
     }
@@ -207,11 +201,11 @@ function processJob(job, callback) {
         });
 
         zip.stdout.on('data', function(data) {
-            debug('zip stdout', data.toString().trim());
+            debugVerbose('zip stdout', data.toString().trim());
         });
 
         zip.stderr.on('data', function() {
-            debug('zip stderr', data.toString().trim());
+            debugVerbose('zip stderr', data.toString().trim());
         });
 
         zip.on('close', function(exitCode) {
@@ -221,7 +215,7 @@ function processJob(job, callback) {
             }
 
             compressedFilePath = path.join(temporaryDirectoryPath, job.destination.name);
-            debug('Compressed file created!');
+            debug('Compressed file created');
             cb();
         });
     }
@@ -231,16 +225,15 @@ function processJob(job, callback) {
 
         fs.stat(compressedFilePath, function(err, stats) {
             if(err) {
-                debug('error getting compressed file size!');
+                debug('Error getting compressed file size');
                 return cb(err);
             }
 
             compressedFileSize = stats.size;
             var compressionEfficiency = ((1 - compressedFileSize/filesSize) * 100).toFixed(2);
 
-            debug('Compressed file size is %s, compressed by %s%',
-                prettyBytes(compressedFileSize),
-                compressionEfficiency);
+            debug('Compressed file size is %s', prettyBytes(compressedFileSize));
+            debug('Original file was compressed by %s', compressionEfficiency);
 
             cb();
         });
@@ -259,12 +252,12 @@ function processJob(job, callback) {
         upload.on('httpUploadProgress', debug);
         upload.send(function(err, data) {
             if(err) {
-                debug('Error uploading file!');
+                debug('Error uploading file');
                 return cb(err);
             }
 
             uploadedFileLocation = data.Location;
-            debug('File available at: %s', uploadedFileLocation);
+            debugVerbose('File available at: %s', uploadedFileLocation);
 
             cb();
         });
@@ -272,7 +265,7 @@ function processJob(job, callback) {
 
     function sendNotifications(cb) {
         if(!job.notifications || !job.notifications.length) {
-            debug('No notifications to send...');
+            debug('No notifications to send');
             return cb();
         }
 
@@ -310,7 +303,7 @@ function processJob(job, callback) {
         debug('Perfoming clean up...');
 
         if(!temporaryDirectoryPath) {
-            debug('Nothing to cleanup!');
+            debug('Nothing to cleanup');
             return cb();
         }
 
@@ -320,7 +313,7 @@ function processJob(job, callback) {
                 throw err;
             }
 
-            debug('Cleanup complete');
+            debug('Cleanup completed');
             cb();
         });
     }
@@ -328,7 +321,6 @@ function processJob(job, callback) {
     var startTime = new Date();
     async.series([
         getHeaders,
-        checkFiles,
         requestVisibilityTimeoutExtensionIfNeeded,
         createTemporaryDirectory,
         downloadFiles,
@@ -372,7 +364,7 @@ function getJobBatch() {
         WaitTimeSeconds: longPoolingPeriod
     }, function(err, data) {
         if(err) {
-            debug('Error receiving messages!');
+            debug('Error receiving messages');
             throw err;
         }
 
@@ -406,15 +398,15 @@ app.post('/', function(req, res, next) {
     var job = req.body;
 
     if(!job.credentials || !job.credentials.accessKeyId || !job.credentials.secretAccessKey || !job.credentials.region) {
-        return next(new Error('Credentials missing!'));
+        return next(new Error('Credentials missing'));
     }
 
     if(!job.files || !job.files.length) {
-        return next(new Error('Files array is missing!'));
+        return next(new Error('Files array is missing'));
     }
 
     if(!job.destination) {
-        return next(new Error('Destination key missing!'));
+        return next(new Error('Destination key missing'));
     }
 
     debugHttp('Job received, sending to queue...');
@@ -422,7 +414,7 @@ app.post('/', function(req, res, next) {
         MessageBody: JSON.stringify(job)
     }, function(err, data) {
         if(err) {
-            debugHttp('Error sending job to queue!');
+            debugHttp('Error sending job to queue');
             return next(err);
         }
 
