@@ -10,7 +10,7 @@ module.exports = function httpNotification(options, callback) {
         results = options.results,
         job = options.job;
 
-    debug('Sending HTTP notification to "%s %s"', notification.method, notification.url);
+    debug('Sending HTTP notification to "%s %s"', notification.method.toUpperCase(), notification.url);
 
     request({
         method: notification.method,

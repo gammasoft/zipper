@@ -129,7 +129,7 @@ function processJob(job, callback) {
         var approximateJobDuration = getTimePrediction(job.files.length, filesSize);
 
         if(!approximateJobDuration) {
-            debug('Not enough data to predict job duration, skipping');
+            debug('Not enough data to predict job duration');
             return cb();
         }
 
