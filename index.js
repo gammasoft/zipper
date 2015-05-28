@@ -50,7 +50,7 @@ function registerTimeTaken(files, size, duration) { // TODO: Implement multi lin
 }
 
 function processJob(job, callback) {
-    debug('Processing job: %s - Attempt #%s', job.id, job.tries);
+    debug('Processing job %s for the %s attempt', job.id, job.tries);
 
     var filesSize = 0,
         temporaryDirectoryPath,
@@ -97,7 +97,7 @@ function processJob(job, callback) {
     }
 
     function getHeaders(cb) {
-        debug('Downloading files headers...');
+        debug('Downloading files headers');
 
         async.eachSeries(job.files, function(file, cb) {
             debugVerbose('Downloading headers from %s', file.fullKey);
@@ -155,7 +155,7 @@ function processJob(job, callback) {
     }
 
     function downloadFiles(cb) {
-        debug('Downloading %s files...', job.files.length);
+        debug('Downloading %s files', job.files.length);
 
         async.eachSeries(job.files, function(file, cb) {
             debugVerbose('Downloading file %s', file.fullKey);
@@ -190,7 +190,7 @@ function processJob(job, callback) {
     }
 
     function createCompressedFile(cb) {
-        debug('Creating compressed file...');
+        debug('Creating compressed file');
 
         var zip = childProcess.spawn('zip', [
             '-r',
@@ -221,7 +221,7 @@ function processJob(job, callback) {
     }
 
     function getCompressedFileSize(cb) {
-        debug('Getting compressed file size...');
+        debug('Getting compressed file size');
 
         fs.stat(compressedFilePath, function(err, stats) {
             if(err) {
@@ -233,14 +233,14 @@ function processJob(job, callback) {
             var compressionEfficiency = ((1 - compressedFileSize/filesSize) * 100).toFixed(2);
 
             debug('Compressed file size is %s', prettyBytes(compressedFileSize));
-            debug('Original file was compressed by %s', compressionEfficiency);
+            debug('Original file was compressed by %s%', compressionEfficiency);
 
             cb();
         });
     }
 
     function uploadCompressedFile(cb) {
-        debug('Uploading file: %s', job.destination.fullKey);
+        debug('Uploading compressed file to %s', job.destination.fullKey);
 
         var upload = s3client.upload({
                 Bucket: job.destination.bucket,
@@ -249,7 +249,7 @@ function processJob(job, callback) {
                 Body: fs.createReadStream(compressedFilePath)
             });
 
-        upload.on('httpUploadProgress', debug);
+        upload.on('httpUploadProgress', debugVerbose);
         upload.send(function(err, data) {
             if(err) {
                 debug('Error uploading file');
@@ -257,7 +257,7 @@ function processJob(job, callback) {
             }
 
             uploadedFileLocation = data.Location;
-            debugVerbose('File available at: %s', uploadedFileLocation);
+            debugVerbose('File available at %s', uploadedFileLocation);
 
             cb();
         });
@@ -269,13 +269,13 @@ function processJob(job, callback) {
             return cb();
         }
 
-        debug('Sending %s notifications...', job.notifications.length);
+        debug('Sending %s notifications', job.notifications.length);
         async.eachSeries(job.notifications, function(notification, cb) {
             var notificationType = notification.type.toLowerCase(),
                 notificationStrategy = notificationTypes[notificationType];
 
             if(!notificationStrategy) {
-                debug('Unkown notification type "%s" - skiping...', notificationType);
+                debug('Unkown notification type "%s"', notificationType);
                 return cb();
             }
 
@@ -292,7 +292,7 @@ function processJob(job, callback) {
     }
 
     function deleteJob(cb) {
-        debug('Deleting job...');
+        debug('Deleting job');
 
         sqs.deleteMessage({
             ReceiptHandle: job.receipt
@@ -300,7 +300,7 @@ function processJob(job, callback) {
     }
 
     function cleanUp(cb) {
-        debug('Perfoming clean up...');
+        debug('Perfoming clean up');
 
         if(!temporaryDirectoryPath) {
             debug('Nothing to cleanup');
@@ -369,7 +369,7 @@ function getJobBatch() {
         }
 
         if(!data.Messages || !data.Messages.length) {
-            debug('No jobs found...');
+            debug('No jobs found');
             return setImmediate(getJobBatch);
         }
 
@@ -409,7 +409,7 @@ app.post('/', function(req, res, next) {
         return next(new Error('Destination key missing'));
     }
 
-    debugHttp('Job received, sending to queue...');
+    debugHttp('Job received, sending to queue');
     sqs.sendMessage({
         MessageBody: JSON.stringify(job)
     }, function(err, data) {

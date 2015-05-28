@@ -15,7 +15,7 @@ You can also configure notification hooks to know when your file is ready.
 
 ### Installation
 
-1. Clone this repo on your Amazon EC2 instance with `git clone https://github.com/gammasoft/zipper.git`
+1. Clone this repo on your Amazon EC2 instance with `git clone https://github.com/gammasoft/zipper.git --branch v.0.5 --depth 1` (*replace for the latest version number*)
 2. Install dependencies: `cd zipper && npm install`
 3. Create a configuration file like this (replace with your specific values), call it `env.json` and put it beside `index.js`:
 ```json
@@ -54,7 +54,7 @@ Send `POST` requests yo your Amazon EC2 instance IP at port `9999` with the foll
 }
 ```
 
-**Note that** `acl` parameter is optional and defaults to `private`.  
+**Note that** `acl` parameter is optional and defaults to `private`.
 
 You will be provided a response `202 - Accepted` containing a job id that will uniquely identify your compression job. It is useful to save this value when using http hooks/notifications to later identify which job has finished. This is what the response data looks like:
 
