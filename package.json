@@ -1,6 +1,6 @@
 {
   "name": "zipper",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "Simple compression service for Amazon S3",
   "main": "index.js",
   "scripts": {
@@ -26,6 +26,7 @@
     "aws-sdk": "^2.1.30",
     "body-parser": "^1.12.4",
     "debug": "^2.2.0",
+    "express": "^4.12.4",
     "pretty-bytes": "^2.0.1",
     "request": "^2.55.0",
     "rimraf": "^2.3.4",
