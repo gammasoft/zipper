@@ -1,6 +1,6 @@
 'use strict';
 
-var Debug = require('Debug'),
+var Debug = require('debug'),
     request = require('request'),
 
     debug = new Debug('zipper');
