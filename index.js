@@ -29,10 +29,30 @@ var express = require('express'),
         secretAccessKey: env.secretAccessKey
     });
 
+function formatTime(miliseconds) {
+    return (miliseconds / 1000).toFixed(2) + ' seconds';
+}
+
+function getTimePrediction(files, size) { // TODO: Implement multi linear regression
+    return null;
+    // return regression.hypothesize([
+    //     files,
+    //     size
+    // ]);
+}
+
+function registerTimeTaken(files, size, duration) { // TODO: Implement multi linear regression
+    // regression.addObservation([
+    //     files,
+    //     size
+    // ], duration);
+}
+
 function processJob(job, callback) {
     debug('Processing job: %s - Attempt #%s', job.id, job.tries);
 
-    var fileHeaders,
+    var filesHeaders,
+        filesSize = 0,
         temporaryDirectoryPath,
         compressedFilePath,
         compressedFileSize,
@@ -83,14 +103,44 @@ function processJob(job, callback) {
                 return cb(err);
             }
 
-            fileHeaders = headers;
+            filesHeaders = headers;
             cb();
         });
     }
 
     function checkFiles(cb) {
         debug('Checking files...');
-        cb(null);
+
+        async.eachSeries(filesHeaders, function(file, cb) {
+            var size = parseInt(file.ContentLength, 10);
+            debug('File size is: %s', prettyBytes(size));
+            // TODO: Add max file size validation
+
+            filesSize += size;
+            cb();
+        }, function(err) {
+            if(err) {
+                debug('Error while checking files');
+                return cb(err);
+            }
+
+            debug('All files checked, total size to compress is %s', prettyBytes(filesSize));
+            // TODO: Add total size validation
+
+            cb();
+        });
+    }
+
+    function requestVisibilityTimeoutExtensionIfNeeded(cb) {
+        var approximateJobDuration = getTimePrediction(job.files.length, filesSize);
+
+        if(!approximateJobDuration) {
+            debug('Not enough data to predict job duration, skipping');
+            return cb();
+        }
+
+        debug('This job is expected to take %s', formatTime(approximateJobDuration));
+        cb();
     }
 
     function createTemporaryDirectory(cb) {
@@ -186,7 +236,11 @@ function processJob(job, callback) {
             }
 
             compressedFileSize = stats.size;
-            debug('Compressed file size is %s', prettyBytes(compressedFileSize));
+            var compressionEfficiency = ((1 - compressedFileSize/filesSize) * 100).toFixed(2);
+
+            debug('Compressed file size is %s, compressed by %s%',
+                prettyBytes(compressedFileSize),
+                compressionEfficiency);
 
             cb();
         });
@@ -275,6 +329,7 @@ function processJob(job, callback) {
     async.series([
         getHeaders,
         checkFiles,
+        requestVisibilityTimeoutExtensionIfNeeded,
         createTemporaryDirectory,
         downloadFiles,
         createCompressedFile,
@@ -291,13 +346,16 @@ function processJob(job, callback) {
                 return callback(err);
             }
 
-            debug('Job completed in: %s seconds', (new Date() - startTime) / 1000);
+            var jobTime = new Date() - startTime;
+            debug('Job completed in %s', formatTime(jobTime));
+            registerTimeTaken(job.files.length, filesSize, jobTime);
+
             callback();
         });
     });
 }
 
-function getNextJobs() {
+function getJobBatch() {
     var longPoolingPeriod = 20,
         visibilityTimeout = 60 * 2.5,
         maxNumberOfMessages = 1,
@@ -320,7 +378,7 @@ function getNextJobs() {
 
         if(!data.Messages || !data.Messages.length) {
             debug('No jobs found...');
-            return setImmediate(getNextJobs);
+            return setImmediate(getJobBatch);
         }
 
         var messages = data.Messages.map(function(message) {
@@ -335,7 +393,7 @@ function getNextJobs() {
 
         debug('Received %s jobs', messages.length);
         async.eachLimit(messages, concurrentJobs, processJob, function(err) {
-            setImmediate(getNextJobs);
+            setImmediate(getJobBatch);
         });
     });
 }
@@ -343,15 +401,6 @@ function getNextJobs() {
 app.use(bodyParser.json({
     limit: '256kb'
 }));
-
-app.all('/echo', function(req, res, next) {
-    debugHttp('Echoing request...');
-
-    res.json({
-        query: req.query,
-        body: req.body
-    });
-});
 
 app.post('/', function(req, res, next) {
     var job = req.body;
@@ -384,5 +433,5 @@ app.post('/', function(req, res, next) {
     });
 });
 
-app.listen(9999);
-getNextJobs();
+app.listen(process.env.HTTP_PORT || 9999);
+getJobBatch();
