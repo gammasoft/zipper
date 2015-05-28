@@ -15,7 +15,7 @@ You can also configure notification hooks to know when your file is ready.
 
 ### Installation
 
-1. Clone this repo on your Amazon EC2 instance with `git clone https://github.com/gammasoft/zipper.git --branch v.0.5 --depth 1` (*replace for the latest version number*)
+1. Clone this repo on your Amazon EC2 instance with `git clone https://github.com/gammasoft/zipper.git --branch v1.0.5 --depth 1` (*replace for the latest version number*)
 2. Install dependencies: `cd zipper && npm install`
 3. Create a configuration file like this (replace with your specific values), call it `env.json` and put it beside `index.js`:
 ```json
