@@ -49,9 +49,12 @@ Send `POST` requests yo your Amazon EC2 instance IP at port `9999` with the foll
     "method": "post",
     "url": "http://example.com/update-zip-status?id={:id}"
   }],
-  "destination": "myThirdBucket/everything.zip"
+  "destination": "myThirdBucket/everything.zip",
+  "acl": "private"
 }
 ```
+
+**Note that** `acl` parameter is optional and defaults to `private`.  
 
 You will be provided a response `202 - Accepted` containing a job id that will uniquely identify your compression job. It is useful to save this value when using http hooks/notifications to later identify which job has finished. This is what the response data looks like:
 
