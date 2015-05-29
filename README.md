@@ -26,11 +26,11 @@ You can also configure notification hooks to know when your file is ready.
     "secretAccessKey": "M8sj0opL/GZ8n7Qgak9OC8/81kfLv7ptG7JnZAFM"
 }
 ```
-Then run `node index.js` (or use forever/pm2 to survive hiccups)
+Then run `node index.js` (or use forever/pm2 to survive hiccups). Default port is `9999` but you can set `HTTP_PORT` env variable to change it.
 
 ### Usage
 
-Send `POST` requests yo your Amazon EC2 instance IP at port `9999` with the following payload:
+Send `POST` requests yo your Amazon EC2 instance public IP with the following data:
 
 ```json
 {
