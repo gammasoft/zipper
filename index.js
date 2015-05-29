@@ -108,7 +108,7 @@ function processJob(job, callback) {
             }, function(err, header) {
                 if(err) {
                     debug('Error obtaining file head');
-                    return next(err);
+                    return cb(err);
                 }
 
                 validateFile(header, cb);
