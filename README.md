@@ -26,7 +26,7 @@ You can also configure notification hooks to know when your file is ready.
     "secretAccessKey": "M8sj0opL/GZ8n7Qgak9OC8/81kfLv7ptG7JnZAFM"
 }
 ```
-4. Run `node index.js` (or use forever/pm2 to survive hiccups)
+Then run `node index.js` (or use forever/pm2 to survive hiccups)
 
 ### Usage
 
@@ -91,12 +91,13 @@ This is the payload sent with any HTTP notification:
 
 ### Debugging
 
-If you have any problems and need some debbuging then you should start zipper like this: `DEBUG=zipper,zipper:http node index.js`. This will print log messages that might be helpful.
+If you have any problems and need some debbuging then you should start zipper like this: `DEBUG=zipper,zipper:http node index.js`. This will print log messages that might be helpful. If you want to track download and upload progress then use `DEBUG=zipper:verbose`.
 
 ### Roadmap
 
 1. Implement email notifications
-2. Implement size filters (e.g. *do not allow resulting files bigger than X, or individual files bigger than Y*)
+2. Implement file validations (prevent processing of huge files)
+3. Find a way to predict how long the job will take based on the number of files and their total size, so Zipper can extend its visibility timeout and prevent other workers from processing the same job concurrently.
 
 ### Contributions
 
