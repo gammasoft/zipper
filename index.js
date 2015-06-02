@@ -90,7 +90,7 @@ function processJob(job, callback) {
     job.destination.name = path.basename(job.destination.key);
 
     function validateMaxReceiveCount(cb) {
-        if(maxReceiveCount > job.receiveCount) {
+        if(job.receiveCount > maxReceiveCount) {
             return cb(new Error('Max receive count exceeded'));
         }
 
@@ -448,7 +448,7 @@ sqs.getQueueAttributes({
 
     if(queueAttributes.Attributes.RedrivePolicy) {
         var redrivePolicy = JSON.parse(queueAttributes.Attributes.RedrivePolicy);
-        maxReceiveCount = redrivePolicy.maxReceiveCount;
+        maxReceiveCount = parseFloat(redrivePolicy.maxReceiveCount);
     }
 
     var maximumMessageSize = parseFloat(queueAttributes.Attributes.MaximumMessageSize) || '256kb';
